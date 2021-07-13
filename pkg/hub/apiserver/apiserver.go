@@ -31,9 +31,11 @@ import (
 	federationsInstall "github.com/clusternet/clusternet/pkg/apis/federations/install"
 	proxiesInstall "github.com/clusternet/clusternet/pkg/apis/proxies/install"
 
+	"github.com/clusternet/clusternet/pkg/exchanger"
 	clusterInformers "github.com/clusternet/clusternet/pkg/generated/informers/externalversions/clusters/v1beta1"
 	governstorage "github.com/clusternet/clusternet/pkg/registry/federation/govern"
 	socketstorage "github.com/clusternet/clusternet/pkg/registry/proxies/socket"
+	"github.com/clusternet/clusternet/pkg/registry/proxies/socket/subresources"
 )
 
 var (
@@ -107,7 +109,8 @@ func (cfg *Config) Complete() CompletedConfig {
 }
 
 // New returns a new instance of HubAPIServer from the given config.
-func (c completedConfig) New(tunnelLogging, socketConnection bool, mclsInformer clusterInformers.ManagedClusterInformer, CoreAPIKubeconfigPath string) (*HubAPIServer, error) {
+func (c completedConfig) New(tunnelLogging, socketConnection bool, extraHeaderPrefixes []string,
+	mclsInformer clusterInformers.ManagedClusterInformer, CoreAPIKubeconfigPath string) (*HubAPIServer, error) {
 	genericServer, err := c.GenericConfig.New("clusternet-hub", genericapiserver.NewEmptyDelegate())
 	if err != nil {
 		return nil, err
@@ -124,8 +127,14 @@ func (c completedConfig) New(tunnelLogging, socketConnection bool, mclsInformer 
 
 	apiGroupInfoProxies := genericapiserver.NewDefaultAPIGroupInfo(proxies.GroupName, Scheme, ParameterCodec, Codecs)
 
+	var ec *exchanger.Exchanger
+	if socketConnection {
+		ec = exchanger.NewExchanger(tunnelLogging, mclsInformer)
+	}
 	v1alpha1storageProxies := map[string]registryrest.Storage{}
-	v1alpha1storageProxies["sockets"] = socketstorage.NewREST(tunnelLogging, socketConnection, mclsInformer)
+	v1alpha1storageProxies["sockets"] = socketstorage.NewREST(socketConnection, ec)
+	v1alpha1storageProxies["sockets/proxy"] = subresources.NewProxyREST(socketConnection, ec, extraHeaderPrefixes)
+
 	apiGroupInfoProxies.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1storageProxies
 
 	apiGroupInfoFeds := genericapiserver.NewDefaultAPIGroupInfo(federations.GroupName, Scheme, ParameterCodec, Codecs)

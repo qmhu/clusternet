@@ -14,25 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package proxies
+package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// Socket is the query options to a websocket call
-type Socket struct {
-	metav1.TypeMeta
+// Manifest stores the raw object
+type Manifest struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Path is the part of URLs that include service endpoints, suffixes,
-	// and parameters to use for the current proxy request to child cluster.
-	// For example, the whole request URL is
-	// http://localhost:8001/apis/proxies.clusternet.io/v1alpha1/sockets/cae6feb5-a23f-4354-8ee7-66527aa03f54/proxy/https/demo.com:6443.
-	// Path is /https/demo.com:6443.
+	// Template defines the raw Kubernetes resource
 	//
-	// +optional
-	// Path is the URL path to use for the current proxy request
-	Path string
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Template runtime.RawExtension `json:"template"`
+}
+
+// +kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ManifestList contains a list of Manifest
+type ManifestList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Manifest `json:"items"`
 }

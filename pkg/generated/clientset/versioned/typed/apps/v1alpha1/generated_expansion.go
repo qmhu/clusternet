@@ -17,10 +17,16 @@ limitations under the License.
 
 package v1alpha1
 
+type BaseExpansion interface{}
+
+type ClusterLocalizationExpansion interface{}
+
 type DescriptionExpansion interface{}
 
 type HelmChartExpansion interface{}
 
 type HelmReleaseExpansion interface{}
+
+type LocalizationExpansion interface{}
 
 type SubscriptionExpansion interface{}

@@ -47,8 +47,8 @@ spec:
         - key: node-role.kubernetes.io/master
           operator: Exists
       containers:
-        - name: clusternet-agent
-          image: ghcr.io/clusternet/clusternet-hub:v0.1.0
+        - name: clusternet-hub
+          image: ghcr.io/clusternet/clusternet-hub:v0.2.0
           imagePullPolicy: IfNotPresent
           command:
             - /usr/local/bin/clusternet-hub

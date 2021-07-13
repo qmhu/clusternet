@@ -19,6 +19,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -59,6 +60,13 @@ func (d *Deployer) Run(ctx context.Context, parentDedicatedKubeConfig *rest.Conf
 	// in case the dedicated kubeconfig get changed when leader election gets lost,
 	// initialize the client when Run() is called
 	parentClientSet := kubernetes.NewForConfigOrDie(parentDedicatedKubeConfig)
+
+	if secret == nil {
+		klog.Error("unexpected nil secret")
+		// in case a race condition here
+		os.Exit(1)
+		return
+	}
 
 	dedicatedNamespace := string(secret.Data[corev1.ServiceAccountNamespaceKey])
 	// make sure deployer gets initialized before we go next
@@ -115,11 +123,15 @@ func createDeployerCredentialsToParentCluster(ctx context.Context, parentClientS
 			Name:      known.ChildClusterSecretName,
 			Namespace: dedicatedNamespace,
 			Labels: map[string]string{
-				known.ClusterRegisteredByLabel: known.ClusternetAgentName,
-				known.ClusterIDLabel:           clusterID,
+				known.ObjectCreatedByLabel:      known.ClusternetAgentName,
+				known.ClusterIDLabel:            clusterID,
+				known.ClusterBootstrappingLabel: known.CredentialsAuto,
 			},
 			Annotations: map[string]string{
 				known.AutoUpdateAnnotationKey: "true",
+			},
+			Finalizers: []string{
+				known.AppFinalizer,
 			},
 		},
 		Data: map[string][]byte{

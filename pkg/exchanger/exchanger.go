@@ -18,14 +18,16 @@ package exchanger
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/rancher/remotedialer"
 	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,9 +62,14 @@ var (
 	urlPrefix = fmt.Sprintf("/apis/%s/sockets/", proxies.SchemeGroupVersion.String())
 )
 
+const (
+	TokenHeaderKey       = "Clusternet-Token"
+	CertificateHeaderKey = "Clusternet-Certificate"
+	PrivateKeyHeaderKey  = "Clusternet-PrivateKey"
+)
+
 func authorizer(req *http.Request) (string, bool, error) {
-	vars := mux.Vars(req)
-	clusterID := vars["cluster"]
+	clusterID := strings.TrimPrefix(strings.TrimRight(req.URL.Path, "/"), urlPrefix)
 	return clusterID, clusterID != "", nil
 }
 
@@ -93,6 +100,9 @@ func (e *Exchanger) getClonedTransport(clusterID string) *http.Transport {
 
 	dialer := e.dialerServer.Dialer(clusterID)
 	transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
 		DialContext: dialer,
 		// apply default settings from http.DefaultTransport
 		MaxIdleConns:          100,
@@ -106,61 +116,107 @@ func (e *Exchanger) getClonedTransport(clusterID string) *http.Transport {
 }
 
 func (e *Exchanger) Connect(ctx context.Context, id string, opts *proxies.Socket, responder rest.Responder) (http.Handler, error) {
-	// serve websocket connection
-	router := mux.NewRouter().PathPrefix(fmt.Sprintf("%s{cluster}", urlPrefix)).Subrouter()
-	router.Handle("", e.dialerServer)
-	router.Handle("/", e.dialerServer)
+	return e.dialerServer, nil
+}
+
+func (e *Exchanger) ProxyConnect(ctx context.Context, id string, opts *proxies.Socket, responder rest.Responder, extraHeaderPrefixes []string) (http.Handler, error) {
+	// Wait for the caches to be synced before starting workers
+	if !cache.WaitForCacheSync(ctx.Done(), e.mcSynced) {
+		err := apierrors.NewServiceUnavailable("cache for ManagedCluster is not ready yet, please retry later")
+		responder.Error(err)
+		return nil, err
+	}
+
+	location, transport, err := e.ClusterLocation(true, id, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// TODO: add metrics
 
-	// proxy and re-dial through websocket connection
-	router.HandleFunc("/direct{path:.*}",
-		func(writer http.ResponseWriter, request *http.Request) {
-			// Wait for the caches to be synced before starting workers
-			if !cache.WaitForCacheSync(ctx.Done(), e.mcSynced) {
-				responder.Error(apierrors.NewServiceUnavailable("cache for ManagedCluster is not ready yet, please retry later"))
-				return
-			}
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		location.RawQuery = request.URL.RawQuery
+		// proxy and re-dial through websocket connection
+		klog.V(4).Infof("Request to %q will be redialed from cluster %q", location.String(), id)
 
-			location, transport, err := e.ClusterLocation(true, true, request, id)
+		extra := newExtra(request.Header, extraHeaderPrefixes)
+
+		if token, ok := extra[strings.ToLower(TokenHeaderKey)]; ok && len(token) > 0 {
+			request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token[0]))
+		}
+
+		publicCertificate := extra[strings.ToLower(CertificateHeaderKey)]
+		privateKey := extra[strings.ToLower(PrivateKeyHeaderKey)]
+		if len(publicCertificate) > 0 && len(privateKey) > 0 {
+			certPEMBlock, err := base64.StdEncoding.DecodeString(publicCertificate[0])
 			if err != nil {
-				responder.Error(err)
+				responder.Error(apierrors.NewBadRequest(fmt.Sprintf("invalid certificate in header %s: %v", CertificateHeaderKey, err)))
 				return
 			}
-
-			klog.V(4).Infof("Request to %q will be redialed from cluster %q", location.String(), id)
-			handler := newThrottledUpgradeAwareProxyHandler(location, transport, false, false, true, true, responder)
-			handler.ServeHTTP(writer, request)
-		})
-	router.HandleFunc("/{scheme}/{host}{path:.*}",
-		func(writer http.ResponseWriter, request *http.Request) {
-			location, transport, err := e.ClusterLocation(false, true, request, id)
+			keyPEMBlock, err := base64.StdEncoding.DecodeString(privateKey[0])
 			if err != nil {
-				responder.Error(err)
+				responder.Error(apierrors.NewBadRequest(fmt.Sprintf("invalid private key in header %s: %v", PrivateKeyHeaderKey, err)))
+				return
+			}
+			cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
+			if err != nil {
+				responder.Error(apierrors.NewBadRequest(fmt.Sprintf("invalid key pair in header: %v", err)))
 				return
 			}
 
-			klog.V(4).Infof("Request to %q will be redialed from cluster %q", location.String(), id)
-			handler := newThrottledUpgradeAwareProxyHandler(location, transport, false, false, true, true, responder)
-			handler.ServeHTTP(writer, request)
-		})
-	return router, nil
+			dialer := e.dialerServer.Dialer(id)
+			transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+					Certificates: []tls.Certificate{
+						cert,
+					},
+				},
+				DialContext: dialer,
+				// apply default settings from http.DefaultTransport
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			}
+		}
+
+		for k := range extra {
+			for _, prefix := range extraHeaderPrefixes {
+				request.Header.Del(prefix + k)
+			}
+		}
+
+		handler := newThrottledUpgradeAwareProxyHandler(location, transport, false, false, true, true, responder)
+		handler.ServeHTTP(writer, request)
+	})
+
+	return handler, nil
 }
 
-func (e *Exchanger) ClusterLocation(isShortPath, useSocket bool, request *http.Request, id string) (*url.URL, http.RoundTripper, error) {
-	location := new(url.URL)
+func (e *Exchanger) ClusterLocation(useSocket bool, id string, opts *proxies.Socket) (*url.URL, http.RoundTripper, error) {
 	var transport *http.Transport
 
-	vars := mux.Vars(request)
-	location.Path = vars["path"]
-	location.RawQuery = request.URL.RawQuery
+	reqPath := strings.TrimLeft(opts.Path, "/")
+	parts := strings.Split(reqPath, "/")
+	if len(parts) == 0 {
+		return nil, nil, apierrors.NewBadRequest(fmt.Sprintf("unexpected error: invalid request path %s", reqPath))
+	}
+	var isShortPath bool
+	if parts[0] == "direct" {
+		isShortPath = true
+	}
 
+	location := new(url.URL)
 	if isShortPath {
 		mcls, err := e.mcLister.List(labels.SelectorFromSet(labels.Set{
 			known.ClusterIDLabel: id,
 		}))
 		if err != nil {
 			return nil, nil, apierrors.NewServiceUnavailable(err.Error())
+		}
+		if mcls == nil {
+			return nil, nil, apierrors.NewBadRequest(fmt.Sprintf("no cluster id is %s", id))
 		}
 		if len(mcls) > 1 {
 			klog.Warningf("found multiple ManagedCluster dedicated for cluster %s !!!", id)
@@ -178,15 +234,20 @@ func (e *Exchanger) ClusterLocation(isShortPath, useSocket bool, request *http.R
 
 		location.Scheme = loc.Scheme
 		location.Host = loc.Host
-		location.Path = path.Join(loc.Path, location.Path)
-	} else {
-		location.Scheme = vars["scheme"]
-		location.Host = vars["host"]
-	}
 
-	// TODO: support https as well
-	if location.Scheme != "http" {
-		return nil, nil, apierrors.NewBadRequest(fmt.Sprintf("scheme %s is not supported now, please use http", location.Scheme))
+		paths := []string{loc.Path}
+		if len(parts) > 1 {
+			paths = append(paths, parts[1:]...)
+		}
+		location.Path = path.Join(paths...)
+	} else {
+		location.Scheme = parts[0]
+		if len(parts) > 1 {
+			location.Host = parts[1]
+		}
+		if len(parts) > 2 {
+			location.Path = path.Join(parts[2:]...)
+		}
 	}
 
 	if useSocket {
@@ -207,4 +268,30 @@ func newThrottledUpgradeAwareProxyHandler(location *url.URL, transport http.Roun
 	handler.RequireSameHostRedirects = utilfeature.DefaultFeatureGate.Enabled(genericfeatures.ValidateProxyRedirects)
 	handler.UseLocationHost = useLocationHost
 	return handler
+}
+
+func unescapeExtraKey(encodedKey string) string {
+	key, err := url.PathUnescape(encodedKey) // Decode %-encoded bytes.
+	if err != nil {
+		return encodedKey // Always record extra strings, even if malformed/unencoded.
+	}
+	return key
+}
+
+func newExtra(h http.Header, headerPrefixes []string) map[string][]string {
+	ret := map[string][]string{}
+
+	// we have to iterate over prefixes first in order to have proper ordering inside the value slices
+	for _, prefix := range headerPrefixes {
+		for headerName, vv := range h {
+			if !strings.HasPrefix(strings.ToLower(headerName), strings.ToLower(prefix)) {
+				continue
+			}
+
+			extraKey := unescapeExtraKey(strings.ToLower(headerName[len(prefix):]))
+			ret[extraKey] = append(ret[extraKey], vv...)
+		}
+	}
+
+	return ret
 }
