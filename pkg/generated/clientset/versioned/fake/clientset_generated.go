@@ -23,6 +23,8 @@ import (
 	fakeappsv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/apps/v1alpha1/fake"
 	clustersv1beta1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/clusters/v1beta1"
 	fakeclustersv1beta1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/clusters/v1beta1/fake"
+	federationsv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/federations/v1alpha1"
+	fakefederationsv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/federations/v1alpha1/fake"
 	proxiesv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/proxies/v1alpha1"
 	fakeproxiesv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/proxies/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -87,6 +89,11 @@ func (c *Clientset) AppsV1alpha1() appsv1alpha1.AppsV1alpha1Interface {
 // ClustersV1beta1 retrieves the ClustersV1beta1Client
 func (c *Clientset) ClustersV1beta1() clustersv1beta1.ClustersV1beta1Interface {
 	return &fakeclustersv1beta1.FakeClustersV1beta1{Fake: &c.Fake}
+}
+
+// FederationsV1alpha1 retrieves the FederationsV1alpha1Client
+func (c *Clientset) FederationsV1alpha1() federationsv1alpha1.FederationsV1alpha1Interface {
+	return &fakefederationsv1alpha1.FakeFederationsV1alpha1{Fake: &c.Fake}
 }
 
 // ProxiesV1alpha1 retrieves the ProxiesV1alpha1Client

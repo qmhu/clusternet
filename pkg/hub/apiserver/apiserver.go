@@ -17,17 +17,22 @@ limitations under the License.
 package apiserver
 
 import (
+	"github.com/clusternet/clusternet/pkg/apis/federations"
+	"github.com/clusternet/clusternet/pkg/apis/proxies"
+	"github.com/clusternet/clusternet/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/version"
-	"k8s.io/apiserver/pkg/registry/rest"
+	registryrest "k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 
-	"github.com/clusternet/clusternet/pkg/apis/proxies"
-	"github.com/clusternet/clusternet/pkg/apis/proxies/install"
+	federationsInstall "github.com/clusternet/clusternet/pkg/apis/federations/install"
+	proxiesInstall "github.com/clusternet/clusternet/pkg/apis/proxies/install"
+
 	clusterInformers "github.com/clusternet/clusternet/pkg/generated/informers/externalversions/clusters/v1beta1"
+	governstorage "github.com/clusternet/clusternet/pkg/registry/federation/govern"
 	socketstorage "github.com/clusternet/clusternet/pkg/registry/proxies/socket"
 )
 
@@ -42,7 +47,8 @@ var (
 )
 
 func init() {
-	install.Install(Scheme)
+	proxiesInstall.Install(Scheme)
+	federationsInstall.Install(Scheme)
 
 	// we need to add the options to empty v1
 	// TODO fix the server code to avoid this
@@ -101,8 +107,13 @@ func (cfg *Config) Complete() CompletedConfig {
 }
 
 // New returns a new instance of HubAPIServer from the given config.
-func (c completedConfig) New(tunnelLogging, socketConnection bool, mclsInformer clusterInformers.ManagedClusterInformer) (*HubAPIServer, error) {
+func (c completedConfig) New(tunnelLogging, socketConnection bool, mclsInformer clusterInformers.ManagedClusterInformer, CoreAPIKubeconfigPath string) (*HubAPIServer, error) {
 	genericServer, err := c.GenericConfig.New("clusternet-hub", genericapiserver.NewEmptyDelegate())
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := utils.LoadsKubeConfig(CoreAPIKubeconfigPath, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -111,13 +122,24 @@ func (c completedConfig) New(tunnelLogging, socketConnection bool, mclsInformer 
 		GenericAPIServer: genericServer,
 	}
 
-	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(proxies.GroupName, Scheme, ParameterCodec, Codecs)
+	apiGroupInfoProxies := genericapiserver.NewDefaultAPIGroupInfo(proxies.GroupName, Scheme, ParameterCodec, Codecs)
 
-	v1alpha1storage := map[string]rest.Storage{}
-	v1alpha1storage["sockets"] = socketstorage.NewREST(tunnelLogging, socketConnection, mclsInformer)
-	apiGroupInfo.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1storage
+	v1alpha1storageProxies := map[string]registryrest.Storage{}
+	v1alpha1storageProxies["sockets"] = socketstorage.NewREST(tunnelLogging, socketConnection, mclsInformer)
+	apiGroupInfoProxies.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1storageProxies
 
-	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+	apiGroupInfoFeds := genericapiserver.NewDefaultAPIGroupInfo(federations.GroupName, Scheme, ParameterCodec, Codecs)
+
+	v1alpha1storageFeds := map[string]registryrest.Storage{}
+	v1alpha1storageFeds["governs"] = governstorage.NewREST(config)
+	apiGroupInfoFeds.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1storageFeds
+
+
+	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfoProxies); err != nil {
+		return nil, err
+	}
+
+	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfoFeds); err != nil {
 		return nil, err
 	}
 

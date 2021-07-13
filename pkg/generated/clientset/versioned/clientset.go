@@ -22,6 +22,7 @@ import (
 
 	appsv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/apps/v1alpha1"
 	clustersv1beta1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/clusters/v1beta1"
+	federationsv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/federations/v1alpha1"
 	proxiesv1alpha1 "github.com/clusternet/clusternet/pkg/generated/clientset/versioned/typed/proxies/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
@@ -32,6 +33,7 @@ type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	AppsV1alpha1() appsv1alpha1.AppsV1alpha1Interface
 	ClustersV1beta1() clustersv1beta1.ClustersV1beta1Interface
+	FederationsV1alpha1() federationsv1alpha1.FederationsV1alpha1Interface
 	ProxiesV1alpha1() proxiesv1alpha1.ProxiesV1alpha1Interface
 }
 
@@ -39,9 +41,10 @@ type Interface interface {
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	appsV1alpha1    *appsv1alpha1.AppsV1alpha1Client
-	clustersV1beta1 *clustersv1beta1.ClustersV1beta1Client
-	proxiesV1alpha1 *proxiesv1alpha1.ProxiesV1alpha1Client
+	appsV1alpha1        *appsv1alpha1.AppsV1alpha1Client
+	clustersV1beta1     *clustersv1beta1.ClustersV1beta1Client
+	federationsV1alpha1 *federationsv1alpha1.FederationsV1alpha1Client
+	proxiesV1alpha1     *proxiesv1alpha1.ProxiesV1alpha1Client
 }
 
 // AppsV1alpha1 retrieves the AppsV1alpha1Client
@@ -52,6 +55,11 @@ func (c *Clientset) AppsV1alpha1() appsv1alpha1.AppsV1alpha1Interface {
 // ClustersV1beta1 retrieves the ClustersV1beta1Client
 func (c *Clientset) ClustersV1beta1() clustersv1beta1.ClustersV1beta1Interface {
 	return c.clustersV1beta1
+}
+
+// FederationsV1alpha1 retrieves the FederationsV1alpha1Client
+func (c *Clientset) FederationsV1alpha1() federationsv1alpha1.FederationsV1alpha1Interface {
+	return c.federationsV1alpha1
 }
 
 // ProxiesV1alpha1 retrieves the ProxiesV1alpha1Client
@@ -88,6 +96,10 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs.federationsV1alpha1, err = federationsv1alpha1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
 	cs.proxiesV1alpha1, err = proxiesv1alpha1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
@@ -106,6 +118,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.appsV1alpha1 = appsv1alpha1.NewForConfigOrDie(c)
 	cs.clustersV1beta1 = clustersv1beta1.NewForConfigOrDie(c)
+	cs.federationsV1alpha1 = federationsv1alpha1.NewForConfigOrDie(c)
 	cs.proxiesV1alpha1 = proxiesv1alpha1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
@@ -117,6 +130,7 @@ func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.appsV1alpha1 = appsv1alpha1.New(c)
 	cs.clustersV1beta1 = clustersv1beta1.New(c)
+	cs.federationsV1alpha1 = federationsv1alpha1.New(c)
 	cs.proxiesV1alpha1 = proxiesv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)

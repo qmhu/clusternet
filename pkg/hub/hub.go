@@ -145,7 +145,10 @@ func (hub *Hub) RunAPIServer() error {
 		return err
 	}
 
-	server, err := config.Complete().New(hub.options.TunnelLogging, hub.socketConnection, hub.clusternetInformerFactory.Clusters().V1beta1().ManagedClusters())
+	server, err := config.Complete().New(hub.options.TunnelLogging,
+		hub.socketConnection,
+		hub.clusternetInformerFactory.Clusters().V1beta1().ManagedClusters(),
+		hub.options.RecommendedOptions.CoreAPI.CoreAPIKubeconfigPath)
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,7 @@ package fake
 import (
 	appsv1alpha1 "github.com/clusternet/clusternet/pkg/apis/apps/v1alpha1"
 	clustersv1beta1 "github.com/clusternet/clusternet/pkg/apis/clusters/v1beta1"
+	federationsv1alpha1 "github.com/clusternet/clusternet/pkg/apis/federations/v1alpha1"
 	proxiesv1alpha1 "github.com/clusternet/clusternet/pkg/apis/proxies/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +35,7 @@ var codecs = serializer.NewCodecFactory(scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
 	appsv1alpha1.AddToScheme,
 	clustersv1beta1.AddToScheme,
+	federationsv1alpha1.AddToScheme,
 	proxiesv1alpha1.AddToScheme,
 }
 

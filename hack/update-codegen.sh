@@ -28,13 +28,13 @@ CODEGEN_PKG=${CODEGEN_PKG:-$(
 bash "${CODEGEN_PKG}/generate-groups.sh" all \
   github.com/clusternet/clusternet/pkg/generated \
   github.com/clusternet/clusternet/pkg/apis \
-  "apps:v1alpha1 clusters:v1beta1 proxies:v1alpha1" \
+  "apps:v1alpha1 clusters:v1beta1 proxies:v1alpha1 federations:v1alpha1" \
   --output-base "$(dirname "${BASH_SOURCE[0]}")/../../../.." \
   --go-header-file "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
 
 bash "${CODEGEN_PKG}/generate-internal-groups.sh" "deepcopy,defaulter,conversion,openapi" \
   github.com/clusternet/clusternet/pkg/generated \
   github.com/clusternet/clusternet/pkg/apis github.com/clusternet/clusternet/pkg/apis \
-  "proxies:v1alpha1" \
+  "proxies:v1alpha1 federations:v1alpha1" \
   --output-base "$(dirname "${BASH_SOURCE[0]}")/../../../.." \
   --go-header-file "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
