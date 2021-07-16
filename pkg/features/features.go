@@ -40,6 +40,12 @@ const (
 	// Works as a deployer that help distribute kinds of resources to a group of clusters
 	Deployer featuregate.Feature = "Deployer"
 
+	// alpha: v0.3.0
+	//
+	// Accept k8s resource and transform into manifest.
+	// Manifests can be distributed to a group of clusters as a App.
+	ResourceAsApps featuregate.Feature = "ResourceAsApps"
+
 	// TODO
 )
 
@@ -54,4 +60,5 @@ var defaultClusternetFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 	SocketConnection: {Default: false, PreRelease: featuregate.Alpha, LockToDefault: false},
 	AppPusher:        {Default: false, PreRelease: featuregate.Alpha, LockToDefault: false},
 	Deployer:         {Default: false, PreRelease: featuregate.Alpha, LockToDefault: false},
+	ResourceAsApps:   {Default: false, PreRelease: featuregate.Alpha, LockToDefault: false},
 }

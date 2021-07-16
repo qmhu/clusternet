@@ -18,6 +18,7 @@ package hub
 
 import (
 	"context"
+	"github.com/clusternet/clusternet/pkg/federation"
 	"time"
 
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -52,14 +53,17 @@ type Hub struct {
 	kubeclient                *kubernetes.Clientset
 	clusternetclient          *clusternetClientSet.Clientset
 	deployer                  *deployer.Deployer
+	fedManager                *federation.Server
 	socketConnection          bool
 	deployerEnabled           bool
+	resourceAsAppsEnabled	  bool
 }
 
 // NewHub returns a new Hub.
 func NewHub(ctx context.Context, opts *options.HubServerOptions) (*Hub, error) {
 	socketConnection := utilfeature.DefaultFeatureGate.Enabled(features.SocketConnection)
 	deployerEnabled := utilfeature.DefaultFeatureGate.Enabled(features.Deployer)
+	resourceAsAppsEnabled := utilfeature.DefaultFeatureGate.Enabled(features.ResourceAsApps)
 
 	config, err := utils.LoadsKubeConfig(opts.RecommendedOptions.CoreAPI.CoreAPIKubeconfigPath, 10)
 	if err != nil {
@@ -83,6 +87,8 @@ func NewHub(ctx context.Context, opts *options.HubServerOptions) (*Hub, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fedManager := federation.NewServer(config, kubeclient, clusternetclient)
 
 	// add informers
 	kubeInformerFactory.Core().V1().Namespaces().Informer()
@@ -108,6 +114,8 @@ func NewHub(ctx context.Context, opts *options.HubServerOptions) (*Hub, error) {
 		socketConnection:          socketConnection,
 		deployer:                  deployer,
 		deployerEnabled:           deployerEnabled,
+		fedManager:                fedManager,
+		resourceAsAppsEnabled:     resourceAsAppsEnabled,
 	}
 
 	// Start the informer factories to begin populating the informer caches
@@ -148,10 +156,12 @@ func (hub *Hub) RunAPIServer() error {
 	server, err := config.Complete().New(hub.options.TunnelLogging, hub.socketConnection,
 		hub.options.RecommendedOptions.Authentication.RequestHeader.ExtraHeaderPrefixes,
 		hub.clusternetInformerFactory.Clusters().V1beta1().ManagedClusters(),
-		hub.options.RecommendedOptions.CoreAPI.CoreAPIKubeconfigPath)
+		hub.fedManager)
 	if err != nil {
 		return err
 	}
+
+	hub.fedManager.ApiserverConfig = config.GenericConfig
 
 	server.GenericAPIServer.AddPostStartHookOrDie("start-clusternet-hub-apiserver-informers", func(context genericapiserver.PostStartHookContext) error {
 		config.GenericConfig.SharedInformerFactory.Start(context.StopCh)

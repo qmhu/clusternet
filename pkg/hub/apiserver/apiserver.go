@@ -17,9 +17,6 @@ limitations under the License.
 package apiserver
 
 import (
-	"github.com/clusternet/clusternet/pkg/apis/federations"
-	"github.com/clusternet/clusternet/pkg/apis/proxies"
-	"github.com/clusternet/clusternet/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -27,13 +24,17 @@ import (
 	"k8s.io/apimachinery/pkg/version"
 	registryrest "k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
+
+	"github.com/clusternet/clusternet/pkg/apis/federations"
 	federationsInstall "github.com/clusternet/clusternet/pkg/apis/federations/install"
+	"github.com/clusternet/clusternet/pkg/apis/proxies"
 	proxiesInstall "github.com/clusternet/clusternet/pkg/apis/proxies/install"
-
 	"github.com/clusternet/clusternet/pkg/exchanger"
+	"github.com/clusternet/clusternet/pkg/federation"
 	clusterInformers "github.com/clusternet/clusternet/pkg/generated/informers/externalversions/clusters/v1beta1"
-	governstorage "github.com/clusternet/clusternet/pkg/registry/federation/govern"
+	declarationstorage "github.com/clusternet/clusternet/pkg/registry/federation/declaration"
 	socketstorage "github.com/clusternet/clusternet/pkg/registry/proxies/socket"
 	"github.com/clusternet/clusternet/pkg/registry/proxies/socket/subresources"
 )
@@ -49,6 +50,8 @@ var (
 )
 
 func init() {
+	_ = clientgoscheme.AddToScheme(Scheme)
+
 	proxiesInstall.Install(Scheme)
 	federationsInstall.Install(Scheme)
 
@@ -110,13 +113,8 @@ func (cfg *Config) Complete() CompletedConfig {
 
 // New returns a new instance of HubAPIServer from the given config.
 func (c completedConfig) New(tunnelLogging, socketConnection bool, extraHeaderPrefixes []string,
-	mclsInformer clusterInformers.ManagedClusterInformer, CoreAPIKubeconfigPath string) (*HubAPIServer, error) {
+	mclsInformer clusterInformers.ManagedClusterInformer, fedServer *federation.Server) (*HubAPIServer, error) {
 	genericServer, err := c.GenericConfig.New("clusternet-hub", genericapiserver.NewEmptyDelegate())
-	if err != nil {
-		return nil, err
-	}
-
-	config, err := utils.LoadsKubeConfig(CoreAPIKubeconfigPath, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +138,8 @@ func (c completedConfig) New(tunnelLogging, socketConnection bool, extraHeaderPr
 	apiGroupInfoFeds := genericapiserver.NewDefaultAPIGroupInfo(federations.GroupName, Scheme, ParameterCodec, Codecs)
 
 	v1alpha1storageFeds := map[string]registryrest.Storage{}
-	v1alpha1storageFeds["governs"] = governstorage.NewREST(config)
+	v1alpha1storageFeds["declarations"] = declarationstorage.NewREST(fedServer)
 	apiGroupInfoFeds.VersionedResourcesStorageMap["v1alpha1"] = v1alpha1storageFeds
-
 
 	if err := s.GenericAPIServer.InstallAPIGroup(&apiGroupInfoProxies); err != nil {
 		return nil, err

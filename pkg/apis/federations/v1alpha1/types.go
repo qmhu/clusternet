@@ -26,7 +26,7 @@ import (
 // +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// Govern is the query path for managing federation apps
-type Govern struct {
+// Declaration is the query path for managing federation apps
+type Declaration struct {
 	metav1.TypeMeta `json:",inline"`
 }

@@ -14,18 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package socket
+package declaration
 
 import (
 	"context"
 	"fmt"
-	"github.com/clusternet/clusternet/pkg/apis/federations/v1alpha1"
-	"k8s.io/client-go/rest"
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	registryrest "k8s.io/apiserver/pkg/registry/rest"
 
+	federationsv1alpha1 "github.com/clusternet/clusternet/pkg/apis/federations/v1alpha1"
 	"github.com/clusternet/clusternet/pkg/federation"
 )
 
@@ -35,11 +34,11 @@ const (
 
 // REST implements a RESTStorage for federation API
 type REST struct {
-	manager        *federation.Manager
+	server *federation.Server
 }
 
 func (r *REST) ShortNames() []string {
-	return []string{"govern"}
+	return []string{"dec"}
 }
 
 func (r *REST) NamespaceScoped() bool {
@@ -51,35 +50,35 @@ func (r *REST) Categories() []string {
 }
 
 func (r *REST) New() runtime.Object {
-	return &v1alpha1.Govern{}
+	return &federationsv1alpha1.Declaration{}
 }
 
-// TODO: constraint govern methods
-var governMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+// TODO: constraint declaration methods
+var declarationMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 
 // ConnectMethods returns the list of HTTP methods that can be federated
 func (r *REST) ConnectMethods() []string {
-	return governMethods
+	return declarationMethods
 }
 
 // NewConnectOptions returns versioned resource that represents federated parameters
 func (r *REST) NewConnectOptions() (runtime.Object, bool, string) {
-	return &v1alpha1.Govern{}, true, ""
+	return &federationsv1alpha1.Declaration{}, true, ""
 }
 
 // Connect returns a handler for the websocket connection
 func (r *REST) Connect(ctx context.Context, id string, opts runtime.Object, responder registryrest.Responder) (http.Handler, error) {
-	govern, ok := opts.(*v1alpha1.Govern)
+	declaration, ok := opts.(*federationsv1alpha1.Declaration)
 	if !ok {
 		return nil, fmt.Errorf("invalid options object: %#v", opts)
 	}
-	return r.manager.HandleConnection(ctx, id, govern, responder)
+	return r.server.HandleConnection(ctx, id, declaration, responder)
 }
 
 // NewREST returns a RESTStorage object that will work against API services.
-func NewREST(config *rest.Config) *REST {
+func NewREST(server *federation.Server) *REST {
 	return &REST{
-		manager: federation.NewManager(config),
+		server: server,
 	}
 }
 

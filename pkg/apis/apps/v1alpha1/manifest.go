@@ -21,9 +21,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// +genclient
 // +k8s:conversion-gen:explicit-from=net/url.Values
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
+// +kubebuilder:resource:scope="Namespaced",categories=clusternet
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // Manifest stores the raw object
 type Manifest struct {
 	metav1.TypeMeta   `json:",inline"`
